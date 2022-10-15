@@ -172,8 +172,8 @@ def fitModel(samples,labels):
     return clf
 
 def predictSample(df, model):
-    alphaAvgPerChannel, _ = getAlphaAndNonalphaFreqAvgsPerChannel(df)
-    prediction = model.predict(alphaAvgPerChannel[5:].reshape(1, -1))
+    alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(df)
+    prediction = model.predict(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel).reshape(1, -1))
     return prediction
 
 if __name__ == "__main__":
@@ -187,8 +187,8 @@ if __name__ == "__main__":
         trainingData = []
         y_values = []
         for i in range(len(trials)):
-            alphaAvgPerChannel, _ = getAlphaAndNonalphaFreqAvgsPerChannel(trials[i]["data"])
-            trainingData.append(alphaAvgPerChannel[5:])
+            alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(trials[i]["data"])
+            trainingData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
             y_values.append(trials[i]["trialType"])
         print(y_values)
         print(np.array(trainingData).shape)
