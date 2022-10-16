@@ -186,17 +186,16 @@ if __name__ == "__main__":
         trials = splitRawDataIntoTrials(dataframe, trialData)
         trainingData = []
         y_values = []
-        for i in range(len(trials)):
+        for i in range(math.floor(len(trials)/2)):
             alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(trials[i]["data"])
             trainingData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
             y_values.append(trials[i]["trialType"])
-        print(y_values)
-        print(np.array(trainingData).shape)
+            #print(y_values)
+            #print(np.array(trainingData).shape)
 
         model = fitModel(trainingData, y_values)
-        for i in range(len(trials)):
+        for i in range(math.floor(len(trials)/2), len(trials)):
             print(trials[i]["trialType"])
             print(predictSample(trials[i]["data"], model))
             print ("=======================")
-            #plotAveragePowerPerChannel(trials[i]["data"], trials[i]["trialType"])
         
