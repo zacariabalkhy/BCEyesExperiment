@@ -69,7 +69,7 @@ def splitRawDataIntoTrials(df, trialData):
 
     return trialSplitData
 
-def plotsample(df):
+def plotTimeseriesAndFrequencyPowers(df):
     freqAmplitudes = np.abs(np.fft.fft(df[:]["EXGChannel7"]))
     freqs = np.fft.fftfreq(n=df[:]["EXGChannel7"].size, d=1/sampleRate)
     
@@ -186,14 +186,17 @@ if __name__ == "__main__":
         trials = splitRawDataIntoTrials(dataframe, trialData)
         trainingData = []
         y_values = []
+
+        #collect training data
         for i in range(math.floor(len(trials)/2)):
             alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(trials[i]["data"])
             trainingData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
             y_values.append(trials[i]["trialType"])
-            #print(y_values)
-            #print(np.array(trainingData).shape)
 
+        #train model
         model = fitModel(trainingData, y_values)
+
+        #collect and predict test data
         for i in range(math.floor(len(trials)/2), len(trials)):
             print(trials[i]["trialType"])
             print(predictSample(trials[i]["data"], model))
