@@ -4,6 +4,7 @@ from pylsl import StreamInlet, resolve_stream
 import datetime
 from multiprocessing import Process
 from multiprocessing import Queue
+from threading import Thread
 
 from pyparsing import null_debug_action
 
@@ -15,22 +16,25 @@ class StreamReader:
         self.sampleRate = 250 #self.stream.nominal_srate
         self.channel_count = 8 # self.stream.channel_count
         self.stream = stream
-        self.streamProcess = Process(target=self.__readStream__)
+        self.streamProcess = Thread(target=self.__readStream__)
         self.streamProcess.start()
+        self.continueStreaming = True
     
     def __readStream__(self):
         try:
             # create a new inlet to read from the stream
             inlet = StreamInlet(self.stream)
             curSecond = []
-            while True:
+            while self.continueStreaming:
                 # get a new sample (you can also omit the timestamp part if you're not
                 # interested in it)
                 sample, timestamp = inlet.pull_sample()
 
                 # add time correction to get system local time, and append timestamp to data
-                timestamp += inlet.time_correction()
-                #sample.append(timestamp)
+                
+                timestamp =  timestamp + inlet.time_correction()
+                if sample:
+                    sample.append(timestamp)
                 curSecond.append(sample)
                 if len(curSecond) == self.sampleRate:
                     i = 0
@@ -53,8 +57,7 @@ class StreamReader:
             except Queue.Empty:
                 return []
     def shutDownStreamer(self):
-        self.streamProcess.kill()
-
+        self.continueStreaming = False
     
 
     

@@ -1,4 +1,5 @@
 from asyncore import read
+from operator import attrgetter
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -97,7 +98,7 @@ def normalize(data):
     for i in range(len(data)):
         data[i] = (data[i] - minimum) / minMaxDiff
     return data
-        
+
 def getFreqsAveragesForChannel(df, channel):
     # note trials are 5 seconds long sampled at 250Hz. Only taking the last 3 sec
     twoSecondIndex = sampleRate*2
