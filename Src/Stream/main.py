@@ -1,5 +1,3 @@
-"""Example program to show how to read a multi-channel time series from LSL."""
-
 from os import times
 from pylsl import StreamInlet, resolve_stream
 from datetime import datetime

@@ -1,13 +1,10 @@
 from os import times
 from time import time
-from pylsl import StreamInlet, resolve_stream
+from pylsl import StreamInlet
 import datetime
 from multiprocessing import Process
 from multiprocessing import Queue
 from threading import Thread
-
-from pyparsing import null_debug_action
-
 
 class StreamReader:
     def __init__(self, bufferSize, stream):
