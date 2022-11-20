@@ -4,17 +4,38 @@ import pandas as pd
 import numpy as np
 import math
 from sklearn.linear_model import LogisticRegression
-
+from scipy import signal
 class Classifier:
 
     def __init__(self):
         self.model = None
-    
-    def getFreqsAveragesForChannel(self, df, channel, sampleRate):
+
+    def butter_bandpass(self, lowcut, highcut, fs, order=5):
+        return signal.butter(order, [lowcut, highcut], fs=fs, btype='bandpass')
+
+    def butter_bandstop(self, lowcut, highcut, fs, order=5):
+        return signal.butter(order, [lowcut, highcut], fs=fs, btype='bandstop')
+
+    def butter_bandpass_filter(self, data, lowcut, highcut, fs, order=5):
+        b, a = self.butter_bandpass(lowcut, highcut, fs, order=order)
+        y = signal.filtfilt(b, a, data)
+        return y
+
+    def butter_bandstop_filter(self, data, lowcut, highcut, fs, order=5):
+        b, a = self.butter_bandstop(lowcut, highcut, fs, order=order)
+        y = signal.filtfilt(b, a, data)
+        return y
+
+    def filterChannel(self, df):
+        bandpassed = self.butter_bandpass_filter(df, 2, 40, 250, 1)
+        bandstopped = self.butter_bandstop_filter(bandpassed, 59, 61, 250, 1)
+        return bandstopped
+
+    def getFreqsAveragesForChannel(self, channelDf, sampleRate):
         # note trials are 5 seconds long sampled at 250Hz. Only taking the last 3 sec
         twoSecondIndex = 0#int(sampleRate*2)
-        freqAmplitudes = np.abs(np.fft.fft(df[twoSecondIndex:][channel]))
-        freqs = np.fft.fftfreq(n=df[twoSecondIndex:][channel].size, d=1/sampleRate)
+        freqAmplitudes = np.abs(np.fft.fft(channelDf[twoSecondIndex:]))
+        freqs = np.fft.fftfreq(n=channelDf[twoSecondIndex:].size, d=1/sampleRate)
         
         #cut out imaginary part of the fft
         freqs = freqs[:math.floor(len(freqs)/2)]
@@ -63,7 +84,9 @@ class Classifier:
             if "channel" not in channel:
                 channels.remove(channel)
             else:
-                alphaAverage, aroundAlphaAverage = self.getFreqsAveragesForChannel(df, channel, sampleRate)
+                #filter signal and then get freqs
+                filtd = self.filterChannel(df[:][channel])
+                alphaAverage, aroundAlphaAverage = self.getFreqsAveragesForChannel(filtd, sampleRate)
                 alphaAvgPerChannel.append(alphaAverage)
                 aroundAlphaAvgPerChannel.append(aroundAlphaAverage)
         return np.array(alphaAvgPerChannel), np.array(aroundAlphaAvgPerChannel)

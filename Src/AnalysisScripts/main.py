@@ -12,7 +12,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import LeaveOneOut
 from sklearn import preprocessing
-from scipy.signal import butter, filtfilt, impulse
+from scipy import signal
 
 #Sample Rate = 250 Hz
 sampleRate = 250
@@ -73,16 +73,25 @@ def splitRawDataIntoTrials(df, trialData):
     return trialSplitData
 
 def butter_bandpass(lowcut, highcut, fs, order=5):
-    return butter(order, [lowcut, highcut], fs=fs, btype='bandpass')
+    return signal.butter(order, [lowcut, highcut], fs=fs, btype='bandpass')
+
+def butter_bandstop(lowcut, highcut, fs, order=5):
+    return signal.butter(order, [lowcut, highcut], fs=fs, btype='bandstop')
 
 def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    t, r = impulse((b,a))  
-    y = filtfilt(b, a, data)#, padtype='even', padlen=t.size, method="pad")
+    y = signal.filtfilt(b, a, data)
+    return y
+
+def butter_bandstop_filter(data, lowcut, highcut, fs, order=5):
+    b, a = butter_bandstop(lowcut, highcut, fs, order=order)
+    y = signal.filtfilt(b, a, data)
     return y
 
 def filterChannel(df):
-    return butter_bandpass_filter(df, 2, 60, 250, 1)
+    bandpassed = butter_bandpass_filter(df, 2, 40, 250, 1)
+    bandstopped = butter_bandstop_filter(bandpassed, 59, 61, 250, 1)
+    return bandstopped
 
 def plotTimeseries(df, trialType):
     channels = list(df.columns.values)
@@ -133,9 +142,11 @@ def normalize(data):
 
 def getFreqsAveragesForChannel(df, channel):
     #first apply butterworth filter to channel
-    filtd = butter_bandpass_filter(df[:][channel], 2, 50, 250, 1)
+    #filtering to [2,50] Hz
+    # using a 1st order for minimum resonance near the cutoff frequencies
+    filtd = filterChannel(df[:][channel])
 
-    # note trials are 5 seconds long sampled at 250Hz. Only taking the last 3 sec
+    # note trials are 6 seconds long sampled at 250Hz. Only taking the last 4 sec
     twoSecondIndex = sampleRate*2
     filtdAndChopped = filtd[sampleRate:(filtd.size - sampleRate)]
     freqAmplitudes = np.abs(np.fft.fft(filtdAndChopped))
@@ -211,32 +222,15 @@ def predictSample(df, model):
     return prediction
 
 if __name__ == "__main__":
-    trainTrialData = readTrialData("../../Data/AlphaWaveExperimentData/Session1/alphaWaveTrialData.json")
     testTrialData = readTrialData("../../Data/AlphaWaveExperimentData/Session2/alphaWaveTrialData.json")
-    trainDataframes = readDataIntoDF("../../Data/AlphaWaveExperimentData/Session1/")
     testDataFrames = readDataIntoDF("../../Data/AlphaWaveExperimentData/Session2/")
-
-    print(trainDataframes[0].columns)
-    print(trainDataframes[0].head)
-
-    trainTrials = splitRawDataIntoTrials(trainDataframes[0], trainTrialData)
-    trainingData = []
-    training_y_values = []
 
     testTrials = splitRawDataIntoTrials(testDataFrames[0], testTrialData) 
     testData = []
     test_y_values = []
-
-    #collect training data
-    for i in range(len(trainTrials)): #range(math.floor(len(trials)/4)):
-        alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(trainTrials[i]["data"])
-        trainingData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
-        training_y_values.append(trainTrials[i]["trialType"])
-
-    #print(trainingData)
     
     #collect test data
-    for i in range(len(testTrials)): #range(math.floor(len(testTrials)/4), len(trials)):
+    for i in range(len(testTrials)):
         alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(testTrials[i]["data"])
         #plotTimeseries(testTrials[i]["data"], testTrials[i]["trialType"])
         testData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
@@ -247,7 +241,6 @@ if __name__ == "__main__":
     X_scaled = scaler.transform(testData)
 
     #train model
-    #model = fitModel(trainingData, training_y_values)
     model = LogisticRegression(random_state=0)
 
     #leave one out
