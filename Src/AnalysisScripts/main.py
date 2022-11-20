@@ -9,6 +9,10 @@ from datetime import datetime
 import time
 import math
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import LeaveOneOut
+from sklearn import preprocessing
+from scipy.signal import butter, filtfilt, impulse
 
 #Sample Rate = 250 Hz
 sampleRate = 250
@@ -68,9 +72,37 @@ def splitRawDataIntoTrials(df, trialData):
 
     return trialSplitData
 
+def butter_bandpass(lowcut, highcut, fs, order=5):
+    return butter(order, [lowcut, highcut], fs=fs, btype='bandpass')
+
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    t, r = impulse((b,a))  
+    y = filtfilt(b, a, data)#, padtype='even', padlen=t.size, method="pad")
+    return y
+
+def filterChannel(df):
+    return butter_bandpass_filter(df, 2, 60, 250, 1)
+
+def plotTimeseries(df, trialType):
+    channels = list(df.columns.values)
+    plt.figure(figsize=(10,10))
+    plt.title(trialType)
+    i = 1
+    for col in channels:
+        if "EXGChannel" in col:
+            filtd = filterChannel(pd.to_numeric(df[:][col]))
+            plt.subplot(9, 1, i)
+            plt.plot(pd.to_numeric(df[sampleRate:(filtd.size - sampleRate)]['Timestamp']), filtd[sampleRate:(filtd.size - sampleRate)], "b")
+            plt.xlabel('Sample')
+            plt.ylabel('Amplitude')
+            plt.tight_layout()
+            i+=1
+    plt.show()
+
 def plotTimeseriesAndFrequencyPowers(df):
-    freqAmplitudes = np.abs(np.fft.fft(df[:]["EXGChannel7"]))
-    freqs = np.fft.fftfreq(n=df[:]["EXGChannel7"].size, d=1/sampleRate)
+    freqAmplitudes = np.abs(np.fft.fft(df[:]["EXGChannel5"]))
+    freqs = np.fft.fftfreq(n=df[:]["EXGChannel5"].size, d=1/sampleRate)
     
     freqs = freqs[:math.floor(len(freqs)/2)]
     freqAmplitutdes = freqAmplitudes[:math.floor(len(freqAmplitudes)/2)]
@@ -100,10 +132,14 @@ def normalize(data):
     return data
 
 def getFreqsAveragesForChannel(df, channel):
+    #first apply butterworth filter to channel
+    filtd = butter_bandpass_filter(df[:][channel], 2, 50, 250, 1)
+
     # note trials are 5 seconds long sampled at 250Hz. Only taking the last 3 sec
     twoSecondIndex = sampleRate*2
-    freqAmplitudes = np.abs(np.fft.fft(df[twoSecondIndex:][channel]))
-    freqs = np.fft.fftfreq(n=df[twoSecondIndex:][channel].size, d=1/sampleRate)
+    filtdAndChopped = filtd[sampleRate:(filtd.size - sampleRate)]
+    freqAmplitudes = np.abs(np.fft.fft(filtdAndChopped))
+    freqs = np.fft.fftfreq(n=filtdAndChopped.size, d=1/sampleRate)
     
     #cut out imaginary part of the fft
     freqs = freqs[:math.floor(len(freqs)/2)]
@@ -117,7 +153,7 @@ def getFreqsAveragesForChannel(df, channel):
     freqAmplitudes = freqAmplitudes[startIndex:endIndex]
 
     #normalize frequencyAmplitudes
-    freqAmplitudes = normalize(freqAmplitudes)
+    #freqAmplitudes = normalize(freqAmplitudes)
 
     #average frequency powers outside of alpha range and frequencies inside alpha range
     alphaAverage = 0
@@ -125,7 +161,7 @@ def getFreqsAveragesForChannel(df, channel):
     numFreqsAroundAlpha = 0
     numFreqsInAlpha = 0
     for i in range(len(freqAmplitudes)):
-        if (freqs[i] >= 6 and freqs[i] < 8 or (freqs[i] > 12 and freqs[i] <= 14)):
+        if ((freqs[i] >= 6 and freqs[i] < 8) or (freqs[i] > 12 and freqs[i] <= 14)):
             aroundAlphaAverage += freqAmplitudes[i]
             numFreqsAroundAlpha += 1
         if freqs[i] >= 8 and freqs[i] <= 12:
@@ -141,15 +177,14 @@ def getAlphaAndNonalphaFreqAvgsPerChannel(df):
     alphaAvgPerChannel = []
     aroundAlphaAvgPerChannel = []
     for channel in list(channels):
-        if "EXG" not in channel:
-            channels.remove(channel)
-        else:
+        if "EXG" in channel:
             alphaAverage, aroundAlphaAverage = getFreqsAveragesForChannel(df, channel)
             alphaAvgPerChannel.append(alphaAverage)
             aroundAlphaAvgPerChannel.append(aroundAlphaAverage)
     return np.array(alphaAvgPerChannel), np.array(aroundAlphaAvgPerChannel)
 
 def plotAveragePowerPerChannel(df, trialType):
+    df.drop(['SampleIndex', 'Timestamp'], axis=1, inplace=True)
     alphaAvgPerChannel, aroundAlphaAvgPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(df)
     
     channels = list(df.columns.values)
@@ -183,34 +218,47 @@ if __name__ == "__main__":
 
     print(trainDataframes[0].columns)
     print(trainDataframes[0].head)
+
     trainTrials = splitRawDataIntoTrials(trainDataframes[0], trainTrialData)
     trainingData = []
-    y_values = []
+    training_y_values = []
+
+    testTrials = splitRawDataIntoTrials(testDataFrames[0], testTrialData) 
+    testData = []
+    test_y_values = []
 
     #collect training data
     for i in range(len(trainTrials)): #range(math.floor(len(trials)/4)):
         alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(trainTrials[i]["data"])
-        trainingData.append(avgNonAlphaPerChannel)
-        y_values.append(trainTrials[i]["trialType"])
+        trainingData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
+        training_y_values.append(trainTrials[i]["trialType"])
 
-    print(trainingData)
+    #print(trainingData)
     
-    #train model
-    model = fitModel(trainingData, y_values)
-
-    testTrials = splitRawDataIntoTrials(testDataFrames[0], testTrialData) 
-    #collect and predict test data
-    num_correct = 0
-    num_incorrect = 0
+    #collect test data
     for i in range(len(testTrials)): #range(math.floor(len(testTrials)/4), len(trials)):
-        prediction = predictSample(testTrials[i]["data"], model)
-        if (testTrials[i]["trialType"] == prediction[0]):
-            num_correct += 1
-        else:
-            num_incorrect += 1
-        print(testTrials[i]["trialType"])
-        print(prediction)
-        print ("=======================")
-    print(num_correct)
-    print(num_incorrect)
+        alphaAvgPerChannel, avgNonAlphaPerChannel = getAlphaAndNonalphaFreqAvgsPerChannel(testTrials[i]["data"])
+        #plotTimeseries(testTrials[i]["data"], testTrials[i]["trialType"])
+        testData.append(np.append(alphaAvgPerChannel, avgNonAlphaPerChannel))
+        test_y_values.append(testTrials[i]["trialType"])
+    
+    #center and scale data
+    scaler = preprocessing.StandardScaler().fit(testData)
+    X_scaled = scaler.transform(testData)
+
+    #train model
+    #model = fitModel(trainingData, training_y_values)
+    model = LogisticRegression(random_state=0)
+
+    #leave one out
+    cv = LeaveOneOut()
+
+    #score mode
+    scores = cross_val_score(model, X_scaled, test_y_values, cv=cv)
+    print('Cross-Validation Accuracy Scores', scores)
+    
+    #print avg
+    scores = pd.Series(scores)
+    print(scores.min(), scores.mean(), scores.max())
+
         
